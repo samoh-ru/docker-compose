@@ -1,0 +1,178 @@
+version: '3.5'
+
+services:
+# Deluge Torrent Server
+  deluge:
+    container_name: deluge
+    image: kurankat/deluge
+    restart: always
+
+    volumes:
+      - '/app/6tb/downloads:/home/user/downloads'
+      - '/home/ysamohvalov/service/homeserver/deluge/.config:/home/user/.config/deluge'
+
+    ports:
+      - '8112:8112'
+      - '58846:58846'
+      - '58946:58946'
+
+    environment:
+      - PUID=1000
+      - PGID=1000
+
+    networks:
+      - homeserver
+
+# SMB shared server
+  samba:
+    container_name: samba
+    image: dperson/samba
+    environment:
+      TZ: 'Europe/Moscow'
+      NMBD: 'true'
+      USER: 'private;!QAZ2wsx'
+      USERID: '0'
+      GROPUID: '0'
+      # SHARE: "mysharename;/mnt;yes;no;no;myuser;'none';'none';'my awesome share"
+      WORKGROUP: 'WORKGROUP'
+      RECYCLE: ''
+
+    networks:
+      - homeserver
+
+    ports:
+      - '192.168.150.90:137:137/udp'
+      - '192.168.150.90:138:138/udp'
+      - '192.168.150.90:139:139/tcp'
+      - '192.168.150.90:445:445/tcp'
+
+    read_only: false
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+    volumes:
+      - '/app/6tb/downloads:/public:z'
+      - '/app/6tb/xvid:/private:z'
+      - '/app/6tb/plex/audio:/audio:z'
+      - '/app/6tb/plex/Films:/Films:z'
+      - '/app/6tb/plex/TV_Show:/TV_Show:z'
+      - '/app/6tb/plex/Animations:/Animations:z'
+      - '/app/6tb/backup/matebook13:/matebook13.backup:z'
+      - '/app/4tb/all.photos/photoprism/originals:/photoprism:z'
+
+    command: '-u "samoh;P!ll0R@mm@" -s "photoprism;/photoprism;yes;no;yes;samoh" -s "public;/public;yes;no;yes;samoh" -s "matebook13.backup;/matebook13.backup;yes;no;yes;samoh" -s "Films;/Films;yes;no;yes;samoh" -s "TV_Show;/TV_Show;yes;no;yes;samoh" -s "Animations;/Animations;yes;no;yes;samoh" -s "private;/private;yes;no;yes;samoh" -s "audio;/audio;yes;no;yes;samoh"'
+
+# PIWIGO Photo storage shared server
+  piwigo:
+    image: lscr.io/linuxserver/piwigo:latest
+    container_name: piwigo
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Moscow
+
+    volumes:
+      - '/app/4tb/piwigo/config:/config'
+      - '/app/4tb/piwigo/gallery:/gallery'
+
+    networks:
+      - homeserver
+
+    ports:
+      - '8633:80'
+
+    restart: unless-stopped
+
+  db:
+    image: mysql
+    container_name: piwigodb
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: piwigo
+      MYSQL_DATABASE: piwigo
+      MYSQL_USER: piwigo
+      MYSQL_PASSWORD: piwigo
+    
+    volumes:
+      - '/app/4tb/piwigo/piwigodb:/var/lib/mysql'
+    
+    networks:
+      - homeserver
+
+# GIT server gitea
+  gitea:
+    image: gitea/gitea:latest-rootless
+    restart: always
+    container_name: gitea
+    volumes:
+      - '/app/gitea/data:/var/lib/gitea'
+      - '/app/gitea/config:/etc/gitea'
+      - '/etc/timezone:/etc/timezone:ro'
+      - '/etc/localtime:/etc/localtime:ro'
+    ports:
+      - '3000:3000'
+      - '2222:2222'
+    networks:
+      - homeserver    
+
+# NEXTCLOUD home dropbox services:
+  nextcloud:
+    image: nextcloud:stable-apache
+    container_name: nextcloud
+    environment:
+      # - PUID=1000
+      # - PGID=1000
+      - TZ=Europe/Moscow
+      - REDIS_HOST=redis-nextcloud
+      - REDIS_HOST_PASSWORD=pwd135246home!_
+    volumes:
+      - '/app/4tb/nextcloud/nextcloud/apps:/var/www/html/apps'
+      - '/app/4tb/nextcloud/nextcloud/config:/var/www/html/config'
+      - '/app/4tb/nextcloud/nextcloud/data:/var/www/html/data'
+      - '/app/4tb/nextcloud/nextcloud.ini:/usr/local/etc/php/conf.d/nextcloud.ini'
+    ports:
+      - '13370:80'
+    restart: unless-stopped
+    depends_on:
+      - postgres-nextcloud
+      - redis-nextcloud
+    networks:
+      - homeserver
+
+  postgres-nextcloud:
+    image: postgres:14.1-alpine
+    container_name: postgres-nextcloud
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=pwd135246home!_
+    volumes:
+      - '/app/4tb/nextcloud/db/postgresql:/var/lib/postgresql/data'
+    networks:
+      - homeserver
+
+  redis-nextcloud:
+    image: redis:alpine
+    container_name: redis-nextcloud
+    command: redis-server --requirepass pwd135246home!_
+    restart: unless-stopped
+    networks:
+      - homeserver
+
+# docker run -d -p 1688:1688 --restart=always --name vlmcsd mikolatero/vlmcsd
+  vlmcsd:
+    image: mikolatero/vlmcsd
+    container_name: vlmcsd
+    restart: always
+    ports:
+      - '1688:1688'
+    networks:
+      - homeserver
+
+
+networks:
+  homeserver:
